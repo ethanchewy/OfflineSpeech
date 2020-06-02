@@ -20,7 +20,50 @@ import wave
 import webrtcvad
 from halo import Halo
 from scipy import signal
+
+# my libs
 import sqlite3
+import sounddevice as sd
+import soundfile as sf
+import threading
+from pathlib import Path
+
+# Used for reference in the Transcript databse
+CURRENT_AUDIO_ID = 1
+
+def collectAudio():
+    # Start Timer
+    timer_start = time.time()
+    # Initially start recording
+    # https://stackoverflow.com/questions/39474111/recording-audio-for-specific-amount-of-time-with-pyaudio
+    samplerate = 44100  # Hertz
+    duration = 10  # seconds
+
+    # Temporarily just use a while true to get audio
+    # might have to open another process for this
+    while True:
+        global CURRENT_AUDIO_ID
+        n = datetime.now().strftime("savewav_%Y-%m-%d_%H-%M-%S_%f.wav")
+        filename = os.path.join("data", n)
+        Path(filename).touch()
+
+        s = datetime.utcnow().timestamp()
+        mydata = sd.rec(int(samplerate * duration), samplerate=samplerate,
+                channels=2, blocking=True)
+        e = datetime.utcnow().timestamp()
+        CURRENT_AUDIO_ID+=1
+
+        sf.write(filename, mydata, samplerate)
+
+        conn = sqlite3.connect("main.db")
+        c = conn.cursor()
+        conn.execute("INSERT INTO AUDIO (FILENAME, STARTTIME, ENDTIME, DURATION) VALUES (?, ?, ?, ?)", (n, s, e, duration*1000))
+        conn.commit()
+        conn.close()
+
+def transcribe(ARGS):
+    main(ARGS)
+
 
 logging.basicConfig(level=20)
 
@@ -52,6 +95,10 @@ class Audio(object):
         self.block_size = int(self.RATE_PROCESS / float(self.BLOCKS_PER_SECOND))
         self.block_size_input = int(self.input_rate / float(self.BLOCKS_PER_SECOND))
         self.pa = pyaudio.PyAudio()
+
+        # Add instance attribute for 10 second audio blocks
+        # self.audio_blocks_queue = queue.Queue()
+        # You can just record directly
 
         kwargs = {
             'format': self.FORMAT,
@@ -175,6 +222,8 @@ def main(ARGS):
     #       For transcripts, the associated audio ids will be a text seperated by spaces since lists aren't supported in SQL
     # Time stored as integer
     # Duration is in milliseconds.
+
+    # BY DEFAULT, WE USE MAIN.DB. CHANGE BELOW TO A NEW DB FILE IF NEED BE
     conn = sqlite3.connect("main.db")
     print("Opened main.db")
     c = conn.cursor()
@@ -188,8 +237,7 @@ def main(ARGS):
          FILENAME           TEXT    NOT NULL,
          STARTTIME            REAL     NOT NULL,
          ENDTIME        REAL     NOT NULL,
-         DURATION       INT     NOT NULL,
-         TIMEZONE       TEXT NOT NULL);''')
+         DURATION       INT     NOT NULL);''')
     if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='TRANSCRIPTS'").fetchone():
         print("Transcripts table does not exist.")
         print("Creating Transcripts Table...")
@@ -273,14 +321,35 @@ def main(ARGS):
             # wav_data = bytearray()
             text = stream_context.finishStream()
             transcript_text = text
+            # Generate audio ids
+            audio_ids = ""
+            counter = 0
+            notDone = True
+            difference = int(transcript_end_time - transcript_start_time)
+            # DEFAULT IS 10 SECONDS
+            while notDone:
+                if difference <= 10:
+                    notDone = False
+                else:
+                    difference -= 10
+                    counter += 1
+                if audio_ids == "":
+                    audio_ids += str(CURRENT_AUDIO_ID)
+                else:
+                    audio_ids = audio_ids + " " + str(CURRENT_AUDIO_ID+counter)
+
+
             # TODO:
             # add time stamp to file
             conn = sqlite3.connect("main.db")
             c = conn.cursor()
-            conn.execute("INSERT INTO TRANSCRIPTS (AUDIOIDS, STARTTIME, ENDTIME, TRANSCRIPT, SPEAKER) VALUES (?, ?, ?, ?, ?)", ("tbd", transcript_start_time, transcript_end_time, transcript_text, "tbd"))
+            conn.execute("INSERT INTO TRANSCRIPTS (AUDIOIDS, STARTTIME, ENDTIME, TRANSCRIPT, SPEAKER) VALUES (?, ?, ?, ?, ?)", (audio_ids, transcript_start_time, transcript_end_time, transcript_text, "tbd"))
             conn.commit()
             conn.close()
             #####
+
+            # For now also add wav files directly related to the text generated
+            # We can also figure out a way to write to files every 10 seconds
             print("Recognized: %s" % text)
             stream_context = model.createStream()
 
@@ -310,4 +379,9 @@ if __name__ == '__main__':
 
     ARGS = parser.parse_args()
     if ARGS.savewav: os.makedirs(ARGS.savewav, exist_ok=True)
-    main(ARGS)
+    # main(ARGS)
+    # https://stackoverflow.com/questions/38254172/infinite-while-true-loop-in-the-background-python
+    b = threading.Thread(name='background', target=collectAudio)
+    f = threading.Thread(name='foreground', target=transcribe, args=(ARGS, ))
+    b.start()
+    f.start()
