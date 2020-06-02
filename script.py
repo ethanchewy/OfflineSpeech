@@ -184,7 +184,7 @@ def main(ARGS):
         print("Audio table does not exist.")
         print("Creating Audio Table...")
         conn.execute('''CREATE TABLE AUDIO
-         (ID INT PRIMARY KEY,
+         (ID INTEGER PRIMARY KEY NOT NULL,
          FILENAME           TEXT    NOT NULL,
          STARTTIME            REAL     NOT NULL,
          ENDTIME        REAL     NOT NULL,
@@ -194,7 +194,7 @@ def main(ARGS):
         print("Transcripts table does not exist.")
         print("Creating Transcripts Table...")
         conn.execute('''CREATE TABLE TRANSCRIPTS
-         (ID INT PRIMARY KEY,
+         (ID INTEGER PRIMARY KEY NOT NULL,
          AUDIOIDS           TEXT    NOT NULL,
          STARTTIME            REAL     NOT NULL,
          ENDTIME        REAL     NOT NULL,
