@@ -4,7 +4,7 @@ cursor==1.3.4
 deepspeech==0.7.1
 halo==0.0.28
 log-symbols==0.0.14
-numpy==1.18.1
+numpy==1.22.0
 PyAudio==0.2.11
 pycparser==2.20
 scipy==1.4.1
