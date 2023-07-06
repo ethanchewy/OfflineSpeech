@@ -7,7 +7,7 @@ log-symbols==0.0.14
 numpy==1.18.1
 PyAudio==0.2.11
 pycparser==2.20
-scipy==1.4.1
+scipy==1.10.0
 six==1.14.0
 sounddevice==0.3.15
 SoundFile==0.10.3.post1
